@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bordro PDF Bolucu</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Bordro PDF Bolucu</h1>
+        <p>PDF yukleyin. Sistem bordrolari otomatik algilar ve tek tikla ayri PDF sayfalarina boler.</p>
+      </header>
+
+      <section class="panel controls">
+        <label class="file-input">
+          <span>PDF dosyasi</span>
+          <input id="pdfInput" type="file" accept="application/pdf" />
+        </label>
+
+        <div class="button-row">
+          <button id="splitBtn" disabled>Otomatik bol ve indir</button>
+          <button id="detectBtn" class="secondary" disabled>Yeniden algila</button>
+        </div>
+
+        <p id="status" class="status">Bir PDF yukleyerek baslayin.</p>
+      </section>
+
+      <section class="panel viewer">
+        <div class="viewer-header">
+          <h2>Onizleme</h2>
+          <div class="button-row compact">
+            <button id="prevPage" class="secondary" disabled>Onceki</button>
+            <span id="pageInfo">Sayfa - / -</span>
+            <button id="nextPage" class="secondary" disabled>Sonraki</button>
+          </div>
+        </div>
+
+        <div id="canvasWrap" class="canvas-wrap" aria-label="PDF onizleme alani">
+          <canvas id="pdfCanvas"></canvas>
+          <canvas id="overlayCanvas"></canvas>
+        </div>
+
+        <p class="hint">Mavi kutular otomatik algilanan bordro alanlarini gosterir.</p>
+      </section>
+
+      <section class="panel detection-panel">
+        <div class="detection-header">
+          <h2>Algilanan Bordrolar</h2>
+          <span id="detectionSummary">Toplam 0 bordro</span>
+        </div>
+        <ul id="detectionList" class="detection-list">
+          <li class="empty">Henuz algilama yapilmadi.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

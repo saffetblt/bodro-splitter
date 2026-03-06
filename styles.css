@@ -1,0 +1,232 @@
+:root {
+  --bg: #f6f8fb;
+  --panel: #ffffff;
+  --text: #1a2433;
+  --muted: #556176;
+  --accent: #0e6efb;
+  --accent-2: #0959cb;
+  --border: #dbe3ef;
+  --danger: #b12727;
+  --ok: #177d41;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 10% 0%, #eef4ff 0%, var(--bg) 45%), var(--bg);
+}
+
+.app {
+  width: min(1100px, 100% - 2rem);
+  margin: 1.2rem auto 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.4rem;
+}
+
+header p {
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 8px 26px rgba(13, 32, 66, 0.05);
+}
+
+.controls {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.file-input {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.file-input input {
+  color: var(--text);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+button {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.58rem 0.95rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+button:hover:enabled {
+  background: var(--accent-2);
+}
+
+button:active:enabled {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #e8eef9;
+  color: #1c3257;
+}
+
+button.secondary:hover:enabled {
+  background: #dae5f7;
+}
+
+.status {
+  min-height: 1.2rem;
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.status.success {
+  color: var(--ok);
+}
+
+.viewer {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.viewer-header,
+.detection-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.viewer-header h2,
+.detection-header h2 {
+  font-size: 1.1rem;
+}
+
+.button-row.compact {
+  align-items: center;
+}
+
+#pageInfo,
+#detectionSummary {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.canvas-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 260px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background: #fbfcff;
+}
+
+canvas {
+  display: block;
+}
+
+#overlayCanvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+#pdfCanvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.detection-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.detection-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.detection-list li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.92rem;
+  color: #2b3951;
+}
+
+.detection-list li.empty {
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .app {
+    width: calc(100% - 1rem);
+    margin-top: 0.7rem;
+  }
+
+  .panel {
+    padding: 0.8rem;
+  }
+
+  h1 {
+    font-size: 1.45rem;
+  }
+
+  .canvas-wrap {
+    min-height: 220px;
+  }
+}
