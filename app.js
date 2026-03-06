@@ -3,49 +3,28 @@
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
   const state = {
-    pdfBytes: null,
-    pdfDoc: null,
-    sourceFile: null,
-    currentPage: 1,
-    currentFileName: "bolunmus",
-    renderNonce: 0,
-    pageSlices: [],
-    totalRegions: 0,
-    markerHits: 0,
+    selectedFile: null,
+    outputBytes: null,
+    outputFileName: "",
+    busy: false,
+    lastProgressPhase: "idle",
   };
 
   const els = {
     pdfInput: document.getElementById("pdfInput"),
+    pickBtn: document.getElementById("pickBtn"),
+    dropArea: document.getElementById("dropArea"),
+    fileName: document.getElementById("fileName"),
     splitBtn: document.getElementById("splitBtn"),
-    detectBtn: document.getElementById("detectBtn"),
-    prevPage: document.getElementById("prevPage"),
-    nextPage: document.getElementById("nextPage"),
-    pageInfo: document.getElementById("pageInfo"),
-    status: document.getElementById("status"),
-    detectionSummary: document.getElementById("detectionSummary"),
-    detectionList: document.getElementById("detectionList"),
-    canvasWrap: document.getElementById("canvasWrap"),
-    pdfCanvas: document.getElementById("pdfCanvas"),
-    overlayCanvas: document.getElementById("overlayCanvas"),
+    downloadBtn: document.getElementById("downloadBtn"),
+    statusTitle: document.getElementById("statusTitle"),
+    statusBadge: document.getElementById("statusBadge"),
+    statusMessage: document.getElementById("statusMessage"),
+    progressFill: document.getElementById("progressFill"),
+    stepLoad: document.getElementById("stepLoad"),
+    stepDetect: document.getElementById("stepDetect"),
+    stepSplit: document.getElementById("stepSplit"),
   };
-
-  const pdfCtx = els.pdfCanvas.getContext("2d");
-  const overlayCtx = els.overlayCanvas.getContext("2d");
-
-  function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function setStatus(message, kind = "info") {
-    els.status.textContent = message;
-    els.status.classList.remove("error", "success");
-    if (kind === "error") {
-      els.status.classList.add("error");
-    }
-    if (kind === "success") {
-      els.status.classList.add("success");
-    }
-  }
 
   function normalizeText(text) {
     return text
@@ -56,6 +35,10 @@
 
   function hasSlipMarker(text) {
     return /\bPUSULASI\b/.test(normalizeText(text));
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
   }
 
   function dedupeCloseNumbers(values, tolerance = 6) {
@@ -75,131 +58,125 @@
     return result;
   }
 
-  function fitScale(rawWidth) {
-    const wrapWidth = els.canvasWrap.clientWidth || window.innerWidth - 32;
-    const desired = (wrapWidth - 24) / rawWidth;
-    return clamp(desired, 0.45, 2.5);
+  function setStepClasses(phase) {
+    const all = [els.stepLoad, els.stepDetect, els.stepSplit];
+    all.forEach((el) => {
+      el.classList.remove("pending", "active", "done", "error");
+      el.classList.add("pending");
+    });
+
+    if (phase === "idle") {
+      return;
+    }
+
+    if (phase === "loading") {
+      state.lastProgressPhase = "loading";
+      els.stepLoad.classList.remove("pending");
+      els.stepLoad.classList.add("active");
+      return;
+    }
+
+    if (phase === "detecting") {
+      state.lastProgressPhase = "detecting";
+      els.stepLoad.classList.remove("pending");
+      els.stepLoad.classList.add("done");
+      els.stepDetect.classList.remove("pending");
+      els.stepDetect.classList.add("active");
+      return;
+    }
+
+    if (phase === "splitting") {
+      state.lastProgressPhase = "splitting";
+      els.stepLoad.classList.remove("pending");
+      els.stepDetect.classList.remove("pending");
+      els.stepLoad.classList.add("done");
+      els.stepDetect.classList.add("done");
+      els.stepSplit.classList.remove("pending");
+      els.stepSplit.classList.add("active");
+      return;
+    }
+
+    if (phase === "done") {
+      state.lastProgressPhase = "done";
+      all.forEach((el) => {
+        el.classList.remove("pending", "active", "error");
+        el.classList.add("done");
+      });
+      return;
+    }
+
+    if (phase === "error") {
+      const failingStep =
+        state.lastProgressPhase === "splitting"
+          ? els.stepSplit
+          : state.lastProgressPhase === "detecting"
+            ? els.stepDetect
+            : els.stepLoad;
+
+      if (failingStep !== els.stepLoad) {
+        els.stepLoad.classList.remove("pending");
+        els.stepLoad.classList.add("done");
+      }
+
+      if (failingStep === els.stepSplit) {
+        els.stepDetect.classList.remove("pending");
+        els.stepDetect.classList.add("done");
+      }
+
+      failingStep.classList.remove("pending", "active", "done");
+      failingStep.classList.add("error");
+    }
   }
 
-  function syncCanvasSize(width, height) {
-    els.pdfCanvas.width = width;
-    els.pdfCanvas.height = height;
-    els.overlayCanvas.width = width;
-    els.overlayCanvas.height = height;
+  function setStatus({ title, badge, badgeClass, message, progress, phase }) {
+    els.statusTitle.textContent = title;
+    els.statusBadge.textContent = badge;
+    els.statusBadge.className = `badge ${badgeClass}`;
+    els.statusMessage.textContent = message;
+    els.progressFill.style.width = `${clamp(progress, 0, 100)}%`;
+    setStepClasses(phase);
+  }
 
-    const cssWidth = `${width}px`;
-    const cssHeight = `${height}px`;
-
-    els.pdfCanvas.style.width = cssWidth;
-    els.pdfCanvas.style.height = cssHeight;
-    els.overlayCanvas.style.width = cssWidth;
-    els.overlayCanvas.style.height = cssHeight;
+  function setIdleStatus() {
+    setStatus({
+      title: "Hazır",
+      badge: "Bekleniyor",
+      badgeClass: "idle",
+      message: "Bir PDF seçip işlemi başlatın.",
+      progress: 0,
+      phase: "idle",
+    });
   }
 
   function updateButtons() {
-    const hasPdf = !!state.pdfDoc;
-
-    els.detectBtn.disabled = !hasPdf;
-    els.splitBtn.disabled = !(hasPdf && state.totalRegions > 0);
-
-    if (!hasPdf) {
-      els.prevPage.disabled = true;
-      els.nextPage.disabled = true;
-      return;
-    }
-
-    els.prevPage.disabled = state.currentPage <= 1;
-    els.nextPage.disabled = state.currentPage >= state.pdfDoc.numPages;
+    els.splitBtn.disabled = !state.selectedFile || state.busy;
+    els.downloadBtn.disabled = !state.outputBytes || state.busy;
   }
 
-  function updatePageInfo() {
-    if (!state.pdfDoc) {
-      els.pageInfo.textContent = "Sayfa - / -";
-      return;
-    }
-    els.pageInfo.textContent = `Sayfa ${state.currentPage} / ${state.pdfDoc.numPages}`;
-  }
+  function setSelectedFile(file) {
+    state.selectedFile = file;
+    state.outputBytes = null;
+    state.outputFileName = "";
 
-  function updateDetectionList() {
-    if (!state.pdfDoc) {
-      els.detectionSummary.textContent = "Toplam 0 bordro";
-      els.detectionList.innerHTML = '<li class="empty">Henuz algilama yapilmadi.</li>';
+    if (!file) {
+      els.fileName.textContent = "Henüz dosya seçilmedi.";
+      setIdleStatus();
+      updateButtons();
       return;
     }
 
-    els.detectionSummary.textContent = `Toplam ${state.totalRegions} bordro`;
+    els.fileName.textContent = `Seçilen dosya: ${file.name}`;
 
-    const rows = state.pageSlices.map((slice, idx) => {
-      const mode = slice.markerCount > 0 ? "basliktan algilandi" : "tum sayfa kabul edildi";
-      return `<li>Sayfa ${idx + 1}: ${slice.regions.length} bordro (${mode})</li>`;
+    setStatus({
+      title: "Dosya Hazır",
+      badge: "Başlamadı",
+      badgeClass: "idle",
+      message: "Bordroları Otomatik Böl butonuna basarak işlemi başlatın.",
+      progress: 0,
+      phase: "idle",
     });
 
-    els.detectionList.innerHTML = rows.length
-      ? rows.join("")
-      : '<li class="empty">Algilanabilir bordro bulunamadi.</li>';
-  }
-
-  function ratioToPixelRect(region) {
-    return {
-      x: region.xRatio * els.overlayCanvas.width,
-      y: region.yRatio * els.overlayCanvas.height,
-      w: region.wRatio * els.overlayCanvas.width,
-      h: region.hRatio * els.overlayCanvas.height,
-    };
-  }
-
-  function drawRegionLabel(text, x, y) {
-    overlayCtx.font = "bold 13px Segoe UI";
-    overlayCtx.fillStyle = "#0b58c8";
-    overlayCtx.fillText(text, x, y);
-  }
-
-  function redrawOverlay() {
-    overlayCtx.clearRect(0, 0, els.overlayCanvas.width, els.overlayCanvas.height);
-
-    if (!state.pdfDoc || !state.pageSlices.length) {
-      return;
-    }
-
-    const current = state.pageSlices[state.currentPage - 1];
-    if (!current) {
-      return;
-    }
-
-    overlayCtx.lineWidth = 2;
-    overlayCtx.strokeStyle = "#0e6efb";
-    overlayCtx.fillStyle = "rgba(14, 110, 251, 0.13)";
-
-    current.regions.forEach((region, index) => {
-      const rect = ratioToPixelRect(region);
-      overlayCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      overlayCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      drawRegionLabel(`Bordro ${index + 1}`, rect.x + 8, rect.y + 16);
-    });
-  }
-
-  async function renderCurrentPage() {
-    if (!state.pdfDoc) {
-      return;
-    }
-
-    const nonce = ++state.renderNonce;
-    const page = await state.pdfDoc.getPage(state.currentPage);
-    if (nonce !== state.renderNonce) {
-      return;
-    }
-
-    const rawViewport = page.getViewport({ scale: 1 });
-    const viewport = page.getViewport({ scale: fitScale(rawViewport.width) });
-
-    syncCanvasSize(Math.floor(viewport.width), Math.floor(viewport.height));
-
-    pdfCtx.clearRect(0, 0, els.pdfCanvas.width, els.pdfCanvas.height);
-    await page.render({ canvasContext: pdfCtx, viewport }).promise;
-
-    updatePageInfo();
     updateButtons();
-    redrawOverlay();
   }
 
   async function detectRegionsForPage(page) {
@@ -226,16 +203,12 @@
     const uniqueStarts = dedupeCloseNumbers(starts, 6);
 
     if (!uniqueStarts.length) {
-      return {
-        markerCount: 0,
-        regions: [{ xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 }],
-      };
+      return [{ xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 }];
     }
 
     const START_PADDING = 10;
     const END_PADDING = 8;
     const MIN_HEIGHT = 80;
-
     const regions = [];
 
     for (let i = 0; i < uniqueStarts.length; i += 1) {
@@ -256,216 +229,235 @@
     }
 
     if (!regions.length) {
-      return {
-        markerCount: uniqueStarts.length,
-        regions: [{ xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 }],
-      };
+      return [{ xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 }];
     }
 
-    return {
-      markerCount: uniqueStarts.length,
-      regions,
-    };
+    return regions;
   }
 
-  async function detectAllRegions() {
-    if (!state.pdfDoc) {
-      return;
-    }
-
-    setStatus("Bordro alanlari otomatik algilaniyor...");
-
+  async function detectAllRegions(pdfDoc) {
     const pageSlices = [];
-    let markerHits = 0;
-    let totalRegions = 0;
 
-    for (let pageNo = 1; pageNo <= state.pdfDoc.numPages; pageNo += 1) {
-      const page = await state.pdfDoc.getPage(pageNo);
-      const slice = await detectRegionsForPage(page);
+    for (let pageNo = 1; pageNo <= pdfDoc.numPages; pageNo += 1) {
+      const page = await pdfDoc.getPage(pageNo);
+      const regions = await detectRegionsForPage(page);
+      pageSlices.push(regions);
 
-      pageSlices.push(slice);
-      markerHits += slice.markerCount;
-      totalRegions += slice.regions.length;
+      const detectionProgress = 30 + Math.round((pageNo / pdfDoc.numPages) * 35);
+      setStatus({
+        title: "Algılanıyor",
+        badge: "Çalışıyor",
+        badgeClass: "running",
+        message: `${pageNo}/${pdfDoc.numPages} sayfa tarandı.`,
+        progress: detectionProgress,
+        phase: "detecting",
+      });
     }
 
-    state.pageSlices = pageSlices;
-    state.markerHits = markerHits;
-    state.totalRegions = totalRegions;
+    return pageSlices;
+  }
 
-    updateDetectionList();
-    updateButtons();
-    redrawOverlay();
+  async function splitPdf(sourceBytes, pageSlices, pageCount) {
+    const outDoc = await PDFLib.PDFDocument.create();
+    const pageIndexes = Array.from({ length: pageCount }, (_, i) => i);
+    const embeddedPages = await outDoc.embedPdf(sourceBytes, pageIndexes);
 
-    if (!markerHits) {
-      setStatus(
-        "Baslik bulunamadi. Guvenli modda her sayfa tek bordro kabul edildi.",
-        "error",
-      );
+    let createdPages = 0;
+
+    embeddedPages.forEach((embeddedPage, pageIndex) => {
+      const regions = pageSlices[pageIndex] || [{ xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 }];
+      const pageW = embeddedPage.width;
+      const pageH = embeddedPage.height;
+
+      regions.forEach((region) => {
+        const x = region.xRatio * pageW;
+        const top = region.yRatio * pageH;
+        const w = region.wRatio * pageW;
+        const h = region.hRatio * pageH;
+        const y = pageH - top - h;
+
+        if (w <= 1 || h <= 1) {
+          return;
+        }
+
+        const outPage = outDoc.addPage([w, h]);
+        outPage.drawPage(embeddedPage, {
+          x: -x,
+          y: -y,
+          width: pageW,
+          height: pageH,
+        });
+
+        createdPages += 1;
+      });
+    });
+
+    if (!createdPages) {
+      throw new Error("Bölünecek uygun bordro alanı bulunamadı.");
+    }
+
+    const outputBytes = await outDoc.save();
+    return { outputBytes, createdPages };
+  }
+
+  async function processPdf() {
+    if (!state.selectedFile) {
       return;
     }
 
-    setStatus(`Algilama tamamlandi. ${totalRegions} bordro bulundu.`, "success");
+    state.busy = true;
+    state.outputBytes = null;
+    updateButtons();
+
+    try {
+      setStatus({
+        title: "Yükleniyor",
+        badge: "Çalışıyor",
+        badgeClass: "running",
+        message: "PDF dosyası okunuyor...",
+        progress: 12,
+        phase: "loading",
+      });
+
+      const buffer = await state.selectedFile.arrayBuffer();
+      const bytesForPdfJs = new Uint8Array(buffer.slice(0));
+      const bytesForSplit = new Uint8Array(buffer.slice(0));
+
+      const loadingTask = pdfjsLib.getDocument({ data: bytesForPdfJs });
+      const pdfDoc = await loadingTask.promise;
+
+      setStatus({
+        title: "Algılanıyor",
+        badge: "Çalışıyor",
+        badgeClass: "running",
+        message: "Bordro başlıkları taranıyor...",
+        progress: 30,
+        phase: "detecting",
+      });
+
+      const pageSlices = await detectAllRegions(pdfDoc);
+      const totalRegions = pageSlices.reduce((acc, regions) => acc + regions.length, 0);
+
+      setStatus({
+        title: "Bölünüyor",
+        badge: "Çalışıyor",
+        badgeClass: "running",
+        message: "PDF parçalara ayrılıyor...",
+        progress: 75,
+        phase: "splitting",
+      });
+
+      const { outputBytes, createdPages } = await splitPdf(bytesForSplit, pageSlices, pdfDoc.numPages);
+
+      state.outputBytes = outputBytes;
+      state.outputFileName = `${state.selectedFile.name.replace(/\.pdf$/i, "")}_bolunmus.pdf`;
+
+      setStatus({
+        title: "Tamamlandı",
+        badge: "Hazır",
+        badgeClass: "done",
+        message: `İşlem tamamlandı. ${totalRegions} bordro algılandı, ${createdPages} sayfa üretildi. İndir butonunu kullanabilirsiniz.`,
+        progress: 100,
+        phase: "done",
+      });
+    } catch (error) {
+      console.error(error);
+      setStatus({
+        title: "Hata",
+        badge: "Başarısız",
+        badgeClass: "error",
+        message: `İşlem başarısız: ${error.message || String(error)}`,
+        progress: 100,
+        phase: "error",
+      });
+    } finally {
+      state.busy = false;
+      updateButtons();
+    }
   }
 
-  function downloadPdf(bytes, filename) {
-    const blob = new Blob([bytes], { type: "application/pdf" });
+  function downloadOutput() {
+    if (!state.outputBytes) {
+      return;
+    }
+
+    const blob = new Blob([state.outputBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = filename;
+    link.download = state.outputFileName || "bordrolar_bolunmus.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
   }
 
-  async function splitAndDownload() {
-    if (!state.pdfDoc || !state.pageSlices.length) {
-      return;
-    }
-
-    els.splitBtn.disabled = true;
-    setStatus("PDF bolunuyor. Lutfen bekleyin...");
-
-    try {
-      let sourceBytes = state.pdfBytes;
-      if (!(sourceBytes instanceof Uint8Array) || sourceBytes.length < 8) {
-        if (!state.sourceFile) {
-          throw new Error("Kaynak PDF byte verisi bulunamadi.");
-        }
-        sourceBytes = new Uint8Array(await state.sourceFile.arrayBuffer());
-        state.pdfBytes = sourceBytes;
-      }
-
-      const outDoc = await PDFLib.PDFDocument.create();
-      const pageIndexes = Array.from({ length: state.pdfDoc.numPages }, (_, i) => i);
-      const embeddedPages = await outDoc.embedPdf(sourceBytes, pageIndexes);
-
-      let createdPages = 0;
-
-      embeddedPages.forEach((embeddedPage, pageIndex) => {
-        const slices = state.pageSlices[pageIndex]?.regions || [
-          { xRatio: 0, yRatio: 0, wRatio: 1, hRatio: 1 },
-        ];
-
-        const pageW = embeddedPage.width;
-        const pageH = embeddedPage.height;
-
-        slices.forEach((region) => {
-          const x = region.xRatio * pageW;
-          const top = region.yRatio * pageH;
-          const w = region.wRatio * pageW;
-          const h = region.hRatio * pageH;
-          const y = pageH - top - h;
-
-          if (w <= 1 || h <= 1) {
-            return;
-          }
-
-          const outPage = outDoc.addPage([w, h]);
-          outPage.drawPage(embeddedPage, {
-            x: -x,
-            y: -y,
-            width: pageW,
-            height: pageH,
-          });
-          createdPages += 1;
-        });
-      });
-
-      if (!createdPages) {
-        throw new Error("Bolme icin uygun bordro alani bulunamadi.");
-      }
-
-      const outputBytes = await outDoc.save();
-      const name = `${state.currentFileName}_bolunmus.pdf`;
-      downloadPdf(outputBytes, name);
-
-      setStatus(`${createdPages} adet bordro sayfasi olusturuldu.`, "success");
-    } catch (error) {
-      console.error(error);
-      setStatus(`Islem basarisiz: ${error.message || String(error)}`, "error");
-    } finally {
-      updateButtons();
-    }
-  }
-
-  async function onFileInputChange(event) {
-    const file = event.target.files?.[0];
+  function handleIncomingFile(file) {
     if (!file) {
       return;
     }
 
-    setStatus("PDF yukleniyor...");
+    const lower = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
 
-    try {
-      const buffer = await file.arrayBuffer();
-      const bytesForPdfJs = new Uint8Array(buffer.slice(0));
-      const bytesForSplit = new Uint8Array(buffer.slice(0));
-      const loadingTask = pdfjsLib.getDocument({ data: bytesForPdfJs });
-      const doc = await loadingTask.promise;
-
-      state.pdfBytes = bytesForSplit;
-      state.pdfDoc = doc;
-      state.sourceFile = file;
-      state.currentPage = 1;
-      state.currentFileName = file.name.replace(/\.pdf$/i, "") || "bolunmus";
-      state.pageSlices = [];
-      state.totalRegions = 0;
-      state.markerHits = 0;
-
-      updatePageInfo();
-      updateDetectionList();
-      updateButtons();
-
-      await detectAllRegions();
-      await renderCurrentPage();
-    } catch (error) {
-      console.error(error);
-      setStatus(`PDF acilamadi: ${error.message || String(error)}`, "error");
+    if (!isPdf) {
+      setStatus({
+        title: "Hata",
+        badge: "Geçersiz Dosya",
+        badgeClass: "error",
+        message: "Lütfen sadece PDF dosyası seçin.",
+        progress: 0,
+        phase: "error",
+      });
+      return;
     }
+
+    setSelectedFile(file);
   }
 
   function bindEvents() {
-    els.pdfInput.addEventListener("change", onFileInputChange);
-
-    els.detectBtn.addEventListener("click", async () => {
-      if (!state.pdfDoc) {
-        return;
-      }
-      await detectAllRegions();
-      await renderCurrentPage();
+    els.pickBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      els.pdfInput.click();
     });
 
-    els.splitBtn.addEventListener("click", splitAndDownload);
-
-    els.prevPage.addEventListener("click", async () => {
-      if (!state.pdfDoc || state.currentPage <= 1) {
-        return;
-      }
-      state.currentPage -= 1;
-      await renderCurrentPage();
+    els.dropArea.addEventListener("click", () => {
+      els.pdfInput.click();
     });
 
-    els.nextPage.addEventListener("click", async () => {
-      if (!state.pdfDoc || state.currentPage >= state.pdfDoc.numPages) {
-        return;
+    els.dropArea.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        els.pdfInput.click();
       }
-      state.currentPage += 1;
-      await renderCurrentPage();
     });
 
-    window.addEventListener("resize", async () => {
-      if (!state.pdfDoc) {
-        return;
-      }
-      await renderCurrentPage();
+    els.pdfInput.addEventListener("change", (event) => {
+      const file = event.target.files?.[0] || null;
+      handleIncomingFile(file);
     });
+
+    els.dropArea.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      els.dropArea.classList.add("drag-over");
+    });
+
+    els.dropArea.addEventListener("dragleave", () => {
+      els.dropArea.classList.remove("drag-over");
+    });
+
+    els.dropArea.addEventListener("drop", (event) => {
+      event.preventDefault();
+      els.dropArea.classList.remove("drag-over");
+      const file = event.dataTransfer?.files?.[0] || null;
+      handleIncomingFile(file);
+    });
+
+    els.splitBtn.addEventListener("click", processPdf);
+    els.downloadBtn.addEventListener("click", downloadOutput);
   }
 
   bindEvents();
+  setIdleStatus();
   updateButtons();
-  updatePageInfo();
-  updateDetectionList();
-  redrawOverlay();
 })();

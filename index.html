@@ -3,56 +3,54 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bordro PDF Bolucu</title>
+    <title>Bordro PDF Bölücü</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="app">
-      <header>
-        <h1>Bordro PDF Bolucu</h1>
-        <p>PDF yukleyin. Sistem bordrolari otomatik algilar ve tek tikla ayri PDF sayfalarina boler.</p>
+      <header class="hero">
+        <h1>Bordro PDF Bölücü</h1>
+        <p>PDF dosyanızı yükleyin, sistem bordroları otomatik bölsün. İşlem tamamlanınca tek tıkla indirin.</p>
       </header>
 
-      <section class="panel controls">
-        <label class="file-input">
-          <span>PDF dosyasi</span>
-          <input id="pdfInput" type="file" accept="application/pdf" />
-        </label>
+      <section class="panel upload-panel">
+        <h2>1. PDF Seçin</h2>
 
-        <div class="button-row">
-          <button id="splitBtn" disabled>Otomatik bol ve indir</button>
-          <button id="detectBtn" class="secondary" disabled>Yeniden algila</button>
+        <div id="dropArea" class="drop-area" role="button" tabindex="0" aria-label="PDF yükleme alanı">
+          <div class="drop-icon" aria-hidden="true">PDF</div>
+          <p class="drop-title">Dosyayı buraya bırakın veya seçin</p>
+          <p class="drop-subtitle">Sadece `.pdf` dosyaları desteklenir.</p>
+          <button id="pickBtn" class="secondary" type="button">PDF Seç</button>
+          <input id="pdfInput" type="file" accept="application/pdf" hidden />
         </div>
 
-        <p id="status" class="status">Bir PDF yukleyerek baslayin.</p>
+        <p id="fileName" class="file-name">Henüz dosya seçilmedi.</p>
       </section>
 
-      <section class="panel viewer">
-        <div class="viewer-header">
-          <h2>Onizleme</h2>
-          <div class="button-row compact">
-            <button id="prevPage" class="secondary" disabled>Onceki</button>
-            <span id="pageInfo">Sayfa - / -</span>
-            <button id="nextPage" class="secondary" disabled>Sonraki</button>
-          </div>
+      <section class="panel process-panel">
+        <h2>2. İşlemi Başlatın</h2>
+
+        <div class="actions">
+          <button id="splitBtn" type="button" disabled>Bordroları Otomatik Böl</button>
+          <button id="downloadBtn" type="button" disabled>İndir</button>
         </div>
 
-        <div id="canvasWrap" class="canvas-wrap" aria-label="PDF onizleme alani">
-          <canvas id="pdfCanvas"></canvas>
-          <canvas id="overlayCanvas"></canvas>
+        <div class="status-head">
+          <p id="statusTitle">Hazır</p>
+          <span id="statusBadge" class="badge idle">Bekleniyor</span>
         </div>
 
-        <p class="hint">Mavi kutular otomatik algilanan bordro alanlarini gosterir.</p>
-      </section>
-
-      <section class="panel detection-panel">
-        <div class="detection-header">
-          <h2>Algilanan Bordrolar</h2>
-          <span id="detectionSummary">Toplam 0 bordro</span>
+        <div class="progress-track" aria-hidden="true">
+          <div id="progressFill" class="progress-fill"></div>
         </div>
-        <ul id="detectionList" class="detection-list">
-          <li class="empty">Henuz algilama yapilmadi.</li>
+
+        <ul class="step-list">
+          <li id="stepLoad">PDF yükleniyor</li>
+          <li id="stepDetect">Bordrolar algılanıyor</li>
+          <li id="stepSplit">PDF bölünüyor</li>
         </ul>
+
+        <p id="statusMessage" class="status-message">Bir PDF seçip işlemi başlatın.</p>
       </section>
     </main>
 
